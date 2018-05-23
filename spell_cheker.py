@@ -11,17 +11,28 @@ class Word:
         self.occ = occ
         self.prob = prob
 
-    def __repr__(self):
-        return repr((self.word, self.occ, self.prob))
+class Corrected:
+    def __init__(self, correction, occ):
+        self.correction = correction
+        self.occ = occ
+
 
 class Correction:
-    def __init__(self, word, correction):
+    def __init__(self, word, corr):
         self.word = word
-        self.correction = correction
-        self.n_occ = 0
+        self.corr = corr
+        self.correction = []
+        if corr != "":
+            self.add_correction((Corrected(corr, 1)))
 
-    def add_occ():
-        self.n_occ += 1
+    def add_correction(self, x):
+        self.correction.append(x)
+
+    def add_occ(self, correction):
+        for e in self.correction:
+            if e.correction == correction:
+                e.occ += 1
+        self.correction.sort(key=lambda x: x.occ, reverse=True)
 
 def get_N():
     word_set = codecs.open('words_count_clean.txt', encoding='latin1')
@@ -38,8 +49,7 @@ def start_dict_hash_table(table):
     for line in word_set:
         if line:
             line = line.split('\t')
-            # get ash code based on string
-            add_word_ash_table(line[1], line[0], table)
+            add_word_hash_table(Word(line[1], int(line[0]), int(line[0])/N), table)
 
 # init hash tables
 portuguese_hash_table = [Word("", 0, 0) for n in range(table_size)] # start word hashtable with prime
@@ -48,57 +58,48 @@ N = get_N()
 
 
 def get_word_value(word):
-    "Get word value using division method"
-    s = len(word) - 1
+    # get word value using division method
     value = 0
-    for char in word:
-        value += ord(char) * (256) ** s
-        s -= 1
+    for i in range(len(word)):
+        value += ord(word[i]) * (256) ** (len(word) - 1 - i)
     return value
 
 
-def word_in_ash_table(word, table):
-    "Check if word is in the hash table"
+def word_in_hash_table(word, table):
+    # Check if word is in the hash table
     code = get_word_value(word) % table_size
     c = 0
     while True:
         code_s = (code + c ** 2) % table_size
-        if portuguese_hash_table[code_s].valid_hash_pos == True and (portuguese_hash_table[code_s].word != word):
-            c += 1
-        elif portuguese_hash_table[code_s].word == word:
+        if table[code_s].word == word:
             return True
-        elif portuguese_hash_table[code_s].valid_hash_pos == False:
-            return False
-
-def get_object_in_ash_table(word, table):
-    code = get_word_value(word) % table_size
-    c = 0
-    while True:
-        code_s = (code + c ** 2) % table_size
-        if portuguese_hash_table[code_s].valid_hash_pos == True and (portuguese_hash_table[code_s].word != word):
+        elif table[code_s].word != "" and (table[code_s].word != word):
             c += 1
-        elif portuguese_hash_table[code_s].word == word:
-            return portuguese_hash_table[code_s]
-        elif portuguese_hash_table[code_s].valid_hash_pos == False:
+        elif table[code_s].word == "":
             return False
 
-def add_word_ash_table(word, occ, table):
-    c = 0
-    code = get_word_value(word) % table_size
-    code_s = code
-    while table[code_s].valid_hash_pos == True:  # quadratic probing
-        c += 1
-        code_s = (code + c ** 2) % table_size
-    table[code_s].valid_hash_pos = True
-    table[code_s].word = word
-    table[code_s].occ = int(occ)
-    table[code_s].prob = int(occ) / N
+
+def add_word_hash_table(object, table):
+     c = 0
+     code = get_word_value(object.word) % table_size
+     code_s = code
+     if not word_in_hash_table(object.word, table):
+         while table[code_s].word != "":
+             c += 1
+             code_s = (code + c ** 2) % table_size
+         table[code_s] = object
+     else:
+         while table[code_s].word != object.word:
+             c += 1
+             code_s = (code + c ** 2) % table_size
+         table[code_s].add_correction(Corrected(object.corr, 1))
+
 
 # --------------------------------- Code from https://norvig.com/spell-correct.html
 
 def edits1(word):
-    "All edits that are one edit away from `word`."
-    letters    = 'abcdefghijklmnopqrstuvwxyzàáãéâêóòêôúìíîõ'
+    # All edits that are one edit away from `word`.
+    letters    = 'abcçdefghijklmnopqrstuvwxyzàáãéâêóòêôúìíîõ'
     splits     = [(word[:i], word[i:])    for i in range(len(word) + 1)]
     deletes    = [L + R[1:]               for L, R in splits if R]
     transposes = [L + R[1] + R[0] + R[2:] for L, R in splits if len(R)>1]
@@ -107,66 +108,93 @@ def edits1(word):
     return set(deletes + transposes + replaces + inserts)
 
 def edits2(word):
-    "All edits that are two edits away from `word`."
+    # All edits that are two edits away from `word`
     return (e2 for e1 in edits1(word) for e2 in edits1(e1))
+# ----------------------------------------------------------------------------------
 
 
-
-def candidates(word):
-    "Generate possible spelling corrections for word."
-    return (known(edits1(word)) or known(edits2(word)))
-
-def get_candidates(word):
+def get_candidates(word, already_cheked):
     o_c = []
-    for cand in candidates(word):
-        if word_in_ash_table(cand, portuguese_hash_table):
-            o_c.append(get_object_in_ash_table(cand, portuguese_hash_table))
-    return sorted(o_c, key=lambda x: x.occ, reverse=True)
+    o_c2 = []
+    i = 0
+    for cand in known(edits1(word)):
+        if cand not in o_c and cand not in already_cheked:
+            o_c.append(get_object_in_hash_table(cand, portuguese_hash_table))
+    if len(o_c) < 5:
+        o_c = sorted(o_c, key=lambda x: x.prob, reverse=True)
+        for cand in known(edits2(word)):
+            if cand not in o_c and cand not in already_cheked:
+                o_c2.append(get_object_in_hash_table(cand, portuguese_hash_table))
+        o_c2 = sorted(o_c2, key=lambda x: x.prob, reverse=True)
+        while len(o_c) < 5 and i < len(o_c2):
+            o_c.append(o_c2[i])
+            i += 1
+            o_c = list(set(o_c))
+    return sorted(o_c, key=lambda x: x.prob, reverse=True)[0:5]
 
+
+def get_object_in_hash_table(word, table):
+    code = get_word_value(word) % table_size
+    c = 0
+    while True:
+        code_s = (code + c ** 2) % table_size
+        if table[code_s] != "" and (table[code_s].word != word):
+            c += 1
+        elif table[code_s].word == word:
+            return table[code_s]
+        else:
+            return False
 
 def known(words):
-    "The subset of `words` that appear in the dictionary of WORDS."
-    known_w = []
-    for word in words:
-        if word_in_ash_table(word, portuguese_hash_table):
-            known_w.append(word)
-    return known_w
-
-# ---------------------------------------------------------------------
+    # check wich words in array 'words' are in the dictionary and return them
+    return [word for word in words if word_in_hash_table(word, portuguese_hash_table)]
 
 
 def spell_checker():
-    # Main function
     while True:
-        usr_text = input("Phrase for analysis: ")
-        usr_words = re.findall(r'\w+', usr_text.lower()) # word set for analysis
-        for word in usr_words:
-            n_corrs = 0
-            if not word_in_ash_table(word, portuguese_hash_table):
-                rsp = input("Word '"+word+"' not found in dictionary, do you want to add it or find it's correction? (add / corr): ")
-                if rsp == "add":
-                    add_word_ash_table(word, 1, portuguese_hash_table)
-                elif rsp == "corr":
-                    if word_in_ash_table(word, correction_hash_table):
-                        n_corrs += 1
-                        r = input("Is this the correction? (yes / no): ")
-                        if r == "yes":
-                            print("Correction: " + get_object_in_ash_table(word, correction_hash_table).word)
-                            get_object_in_ash_table(word, correction_hash_table).add_occ()
-                    else:
-                        c = get_candidates(word)
-                        # print(c)
+        usr_text = input("Phrase: ")
+        if(usr_text[-6:] == "FIMFIM"):
+            usr_text = usr_text[0:-6]
+            usr_words = re.findall(r'\w+', usr_text.lower()) # word set for analysis
+            for word in usr_words:
+                if not word_in_hash_table(word, portuguese_hash_table):
+                    # word not in dictionary, try to find it's correction
+                    rsp = input("Word '"+word+"' not found in dictionary, do you want to add it or find it's correction? (add / corr): ")
+                    if rsp == "add":
+                        add_word_hash_table(Word(word, 1, 1/N) , portuguese_hash_table)
+                    elif rsp == "corr":
+                        n_corrs = 0
+                        go = True
+                        already_cheked = []
+                        if word_in_hash_table(word, correction_hash_table):
+                            print(len(get_object_in_hash_table(word, correction_hash_table).correction))
+                            for corr in get_object_in_hash_table(word, correction_hash_table).correction:
+                                rsp = input("Is '" + corr.correction +"' the correction? (yes / no): ")
+                                already_cheked.append(corr.correction)
+                                if rsp == "yes":
+                                    if word_in_hash_table(word, correction_hash_table):
+                                        get_object_in_hash_table(word, correction_hash_table).add_occ(corr.correction)
+                                    else:
+                                        add_word_hash_table(Correction(word, corr.word), correction_hash_table)
+                                    go = False
+                                    break
+                                n_corrs += 1
+                                if n_corrs == 5:
+                                    break
+                        c = get_candidates(word, already_cheked)
                         i = 0
-                        while(n_corrs < 5 and i < len(c)):
+                        while(n_corrs < 5 and i < len(c) and go):
                             r = input("Is '" + c[i].word + "' correct? (yes / no): ")
                             if r == "yes":
-                                # adicionar à correction hash table
+                                add_word_hash_table(Correction(word, c[i].word), correction_hash_table)
+                                go = False
                                 break
                             elif r == "no":
                                 i += 1
                                 n_corrs += 1
-                        if(n_corrs == 5):
-                            print("CORREÇÃO-NÃO-ENCONTRADA")
+                    if(n_corrs == 5):
+                        print("CORRECAO-NAO-ENCONTRADA")
+
 
 start_dict_hash_table(portuguese_hash_table) # start WORDS dictionary
 spell_checker()
