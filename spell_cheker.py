@@ -2,7 +2,7 @@ import re
 from collections import Counter
 import codecs
 
-table_size = 101771
+table_size = 200003
 
 class Word:
     def __init__(self, word, occ, prob):
@@ -10,6 +10,10 @@ class Word:
         self.word = word
         self.occ = occ
         self.prob = prob
+
+    def add_occ(self):
+        self.occ += 1
+        self.prob = self.occ / N
 
 class Corrected:
     def __init__(self, correction, occ):
@@ -26,9 +30,10 @@ class Correction:
             self.add_correction((Corrected(corr, 1)))
 
     def add_correction(self, x):
-        self.correction.append(x)
+        self.correction.append(x) # adds new object Corrected
 
     def add_occ(self, correction):
+        # method updates occ var in Corrected objects in list, returns sorted list
         for e in self.correction:
             if e.correction == correction:
                 e.occ += 1
@@ -83,6 +88,7 @@ def add_word_hash_table(object, table):
      c = 0
      code = get_word_value(object.word) % table_size
      code_s = code
+
      if not word_in_hash_table(object.word, table):
          while table[code_s].word != "":
              c += 1
@@ -99,7 +105,7 @@ def add_word_hash_table(object, table):
 
 def edits1(word):
     # All edits that are one edit away from `word`.
-    letters    = 'abcçdefghijklmnopqrstuvwxyzàáãéâêóòêôúìíîõ'
+    letters    = 'abcçdeéèfghijklmnopqrstuvwxyzàáãâêóòêôúìíîõ'
     splits     = [(word[:i], word[i:])    for i in range(len(word) + 1)]
     deletes    = [L + R[1:]               for L, R in splits if R]
     transposes = [L + R[1] + R[0] + R[2:] for L, R in splits if len(R)>1]
@@ -114,6 +120,8 @@ def edits2(word):
 
 
 def get_candidates(word, already_cheked):
+    # returns list of candidates, gives priority to the candidates originated
+    # by the edits1 method, only if (len(edits1) < 5) adds the ones that come from edits2
     o_c = []
     o_c2 = []
     i = 0
@@ -127,13 +135,14 @@ def get_candidates(word, already_cheked):
                 o_c2.append(get_object_in_hash_table(cand, portuguese_hash_table))
         o_c2 = sorted(o_c2, key=lambda x: x.prob, reverse=True)
         while len(o_c) < 5 and i < len(o_c2):
-            o_c.append(o_c2[i])
+            if o_c2[i] not in o_c:
+                o_c.append(o_c2[i])
             i += 1
-            o_c = list(set(o_c))
-    return sorted(o_c, key=lambda x: x.prob, reverse=True)[0:5]
+    return o_c[0:5]
 
 
 def get_object_in_hash_table(word, table):
+    # search object in hash table based on the word
     code = get_word_value(word) % table_size
     c = 0
     while True:
@@ -157,23 +166,25 @@ def spell_checker():
             usr_text = usr_text[0:-6]
             usr_words = re.findall(r'\w+', usr_text.lower()) # word set for analysis
             for word in usr_words:
-                if not word_in_hash_table(word, portuguese_hash_table):
+                n_corrs = 0
+                if word_in_hash_table(word, portuguese_hash_table):
+                    get_object_in_hash_table(word, portuguese_hash_table).add_occ()
+                elif not word_in_hash_table(word, portuguese_hash_table):
                     # word not in dictionary, try to find it's correction
                     rsp = input("Word '"+word+"' not found in dictionary, do you want to add it or find it's correction? (add / corr): ")
                     if rsp == "add":
                         add_word_hash_table(Word(word, 1, 1/N) , portuguese_hash_table)
                     elif rsp == "corr":
-                        n_corrs = 0
                         go = True
                         already_cheked = []
                         if word_in_hash_table(word, correction_hash_table):
-                            print(len(get_object_in_hash_table(word, correction_hash_table).correction))
                             for corr in get_object_in_hash_table(word, correction_hash_table).correction:
                                 rsp = input("Is '" + corr.correction +"' the correction? (yes / no): ")
                                 already_cheked.append(corr.correction)
                                 if rsp == "yes":
                                     if word_in_hash_table(word, correction_hash_table):
                                         get_object_in_hash_table(word, correction_hash_table).add_occ(corr.correction)
+                                        get_object_in_hash_table(corr.correction, portuguese_hash_table).add_occ()
                                     else:
                                         add_word_hash_table(Correction(word, corr.word), correction_hash_table)
                                     go = False
